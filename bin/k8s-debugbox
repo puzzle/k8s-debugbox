@@ -1,0 +1,324 @@
+#!/bin/bash
+
+# k8s-debugbox pod openshift3-docker-hello-41-dmj88
+# k8s-debugbox pod openshift3-docker-hello-41-dmj88 -c CONTAINER
+# k8s-debugbox pod openshift3-docker-hello-41-dmj88 --remove
+
+# shopt -s extglob
+
+debugbox_dir=${HOME}/.k8s-debugbox/box
+pod_debugbox_dir=/tmp/box  # Use // to prevent MSYS path translation
+
+usage() {
+  error="$1"
+
+  message=(
+    "Debug pods based on minimal images."
+    ""
+    "Examples:"
+    "  # Open debugging shell for the first container of the specified pod,"
+    "  # install debugging tools into the container if they aren't installed yet."
+    "  k8s-debugbox pod hello-42-dmj88"
+    ""
+    "  # Open debugging shell for container 'proxy' of tje specified pod,"
+    "  # install debugging tools into the container if they aren't installed yet."
+    "  k8s-debugbox pod hello-42-dmj88 -c proxy"
+    ""
+    "  # Install debugging tools into specified pod."
+    "  k8s-debugbox pod hello-42-dmj88 --add"
+    ""
+    "  # Uninstall debugging tools from specified pod."
+    "  k8s-debugbox pod hello-42-dmj88 --remove"
+    ""
+    "  # Open debugging shell for the first container of the first pod of the specified controller,"
+    "  # install debugging tools into all containers of the controller if they aren't installed yet."
+    "  # Requires a redeployment."
+    "  k8s-debugbox deployment hello"
+    ""
+    "  # Uninstall debugging tools from specified controller."
+    "  # Requires a redeployment."
+    "  k8s-debugbox deployment hello --remove"
+    ""
+    "Options:"
+    "  -c, --container='': Container name to open shell for, defaults to first container in pod"
+    "  -h, --help: Show this help message"
+    "      --add: Install debugging tools into specified resource"
+    "      --remove: Remove debugging tools from specified resource"
+    ""
+    "Usage:"
+    "  $(basename $0) TYPE NAME [options]"
+
+  )
+  printf '%s\n' "${message[@]}"
+
+  if [ "$error" ]; then
+    echo
+    echo "$error" >&2
+    exit 1
+  else
+    exit 0
+  fi
+}
+
+init() {
+  if command -v oc >/dev/null 2>&1; then
+    kubectl=oc
+  elif command -v kubectl >/dev/null 2>&1; then
+    kubectl=kubectl
+  else
+    echo "$0: Either the Kubernetes client 'kubectl' or the OpenShift client 'oc' is required!" >&2
+    exit 1
+  fi
+}
+
+parse_cmdline() {
+  local args=()
+  add_opt=false
+  remove_opt=false
+  container=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -h|--help)
+        usage
+        ;;
+      --add)
+        add_opt=true
+        ;;
+      --remove)
+        remove_opt=true
+        ;;
+      -c|--container)
+        shift
+        container_opt="--container=${1}"
+        ;;
+      --container=*)
+        container_opt="--container=${1#*=}"
+        ;;
+      -*)
+        usage "Unknown option $1"
+        ;;
+      *)
+        args+=("$1")
+      esac
+      shift
+  done
+
+  if [ ${#args[@]} -ne 2 ]; then
+    usage "Invalid number of arguments!"
+  fi
+
+  type_arg="${args[0]}"
+  name_arg="${args[1]}"
+}
+
+install_into_pod() {
+  if ! ${kubectl} exec ${container_opt} "${name_arg}" ${pod_debugbox_dir}/bin/true >/dev/null 2>&1; then
+    echo "Uploading debugging tools into ${type_arg} ${name_arg}"
+    ${kubectl} cp ${container_opt} ${debugbox_dir} "${name_arg}":/tmp/
+    if [ $? != 0 ]; then
+      echo >&2
+      echo "Couldn't upload debugging tools!" >&2
+      echo "Instead you can patch the controller (deployment, deploymentconfig, daemonset, ...) to use an init container with debugging tools, this requires a new deployment though!" >&2
+      exit 1
+    fi
+
+    ${kubectl} exec ${container_opt} "${name_arg}" ${pod_debugbox_dir}/install-k8s-debugbox.sh || exit 1
+  fi
+
+  if [ "${add_opt}" != true ]; then
+    ${kubectl} exec ${container_opt} -it "${name_arg}" ${pod_debugbox_dir}/sh
+  fi
+}
+
+remove_from_pod() {
+  if ${kubectl} exec "${name_arg}" -- ${pod_debugbox_dir}/bin/test -e ${pod_debugbox_dir}/uninstall-k8s-debugbox.sh >/dev/null 2>&1; then
+    echo "Removing debugging tools from ${type_arg} ${name_arg}"
+    ${kubectl} exec ${container_opt} "${name_arg}" ${pod_debugbox_dir}/uninstall-k8s-debugbox.sh || exit 1
+  else
+    echo "No debugging tools are installed in ${type_arg} '${name_arg}' with 'kubectl cp' mechanism!"
+  fi
+}
+
+install_into_controller() {
+  #installed=($(kubectl get ${type_arg} ${name_arg} -o jsonpath='{.spec.template.metadata.annotations.k8s-debugbox}'))
+#  if [ ! "${installed}" ]; then
+  echo "Installing debugging tools into ${type_arg} ${name_arg}"
+  containers=$(${kubectl} get "${type_arg}" "${name_arg}" -o jsonpath='{.spec.template.spec.containers[*].name}')
+
+  annotations=($(${kubectl} get "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := .spec.template.metadata.annotations}}{{$key}}{{"\n"}}{{end}}'))
+  if [[ " ${annotations[@]} " =~ " pod.alpha.kubernetes.io/init-containers " ]]; then
+    alpha_init_containers_annotation=true
+  fi
+  if [[ " ${annotations[@]} " =~ " pod.beta.kubernetes.io/init-containers " ]]; then
+    beta_init_containers_annotation=true
+  fi
+
+  patch=(
+    "spec:"
+    "  template:"
+  )
+
+  if [ "${alpha_init_containers_annotation}" = true ] || [ "${beta_init_containers_annotation}" = true ]; then
+    patch+=(
+      "    metadata:"
+      "      annotations: "
+    )
+    if [ "${alpha_init_containers_annotation}" = true ]; then
+      patch+=(
+        "        pod.alpha.kubernetes.io/init-containers: null"
+      )
+    fi
+    if [ "${beta_init_containers_annotation}" = true ]; then
+      patch+=(
+        "        pod.beta.kubernetes.io/init-containers: null"
+      )
+    fi
+  fi
+
+  patch+=(
+    "    spec:"
+    "      volumes:"
+    "      - name: k8s-debugbox"
+    "        emptyDir: {}"
+    "      initContainers:"
+    "      - name: init-debugbox"
+    "        image: puzzle/k8s-debugbox"
+    "        imagePullPolicy: Always"
+    "        volumeMounts:"
+    "        - name: k8s-debugbox"
+    "          mountPath: ${pod_debugbox_dir}"
+    "      containers:"
+  )
+
+  for container in ${containers}; do
+    patch+=(
+      "      - name: ${container}"
+      "        volumeMounts:"
+      "        - name: k8s-debugbox"
+      "          mountPath: ${pod_debugbox_dir}"
+    )
+  done
+
+  patch="$(printf '%s\n' "${patch[@]}")"  # convert patch to string
+  #echo "${patch}"
+  ${kubectl} patch --patch="${patch}" "${type_arg}" "${name_arg}"
+  ${kubectl} rollout status "${type_arg}" "${name_arg}" || exit 1
+
+  if [ "${add_opt}" != true ]; then
+    #${kubectl} exec -it "${type_arg}" "${name_arg}" ${pod_debugbox_dir}/sh
+    selector=$(${kubectl} get "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := (or .spec.selector.matchLabels .spec.selector)}}{{$key}}={{$value}},{{end}}')
+    selector="${selector%,}"  # remove trailing comma
+    #kubectl get pod -l "${selector::-1}" -o yaml
+    #pods=$(kubectl get pod -l "${selector::-1}" -o go-template='{{range .items}}{{if eq .status.phase "Running"}}{{.metadata.name}}{{end}}{{end}}')
+    #pods=($(kubectl get pod -l app=pause -o go-template='{{range .items}}{{$name:=.metadata.name}}{{range .status.conditions}}{{if eq .type "Ready"}}{{$name}}{{"\n"}}{{end}}{{end}}{{end}}'))
+    #pods=($(kubectl get pod -l "${selector}" -o go-template='{{range .items}}{{$name:=.metadata.name}}{{range .status.conditions}}{{if and (eq .type "Ready") (eq .status "True")}}{{$name}}{{"\n"}}{{end}}{{end}}{{end}}'))
+    pods=($(${kubectl} get pod -l "${selector}" -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{.metadata.name}}{{end}}{{end}}'))
+    # echo
+    # kubectl get pod -l "${selector}" >debug.yaml
+    # kubectl get pod -l "${selector}" -o yaml >>debug.yaml
+    # kubectl get pod -l "${selector}"
+    # echo
+    # echo "${pods[@]}"
+    ${kubectl} exec ${container_opt} -it ${pods[0]} ${pod_debugbox_dir}/sh
+  fi
+}
+
+remove_from_controller() {
+  #installed=$(kubectl get ${type_arg} ${name_arg} -o jsonpath='{.spec.template.metadata.annotations.k8s-debugbox}')
+  installed=$(${kubectl} get ${type_arg} ${name_arg} -o jsonpath='{.spec.template.spec.volumes[?(@.name=="k8s-debugbox")].name}')
+  if [ ! "${installed}" ]; then
+    echo "No debugging tools installed in ${type_arg} ${name_arg}"
+    exit 0
+  fi
+
+  echo "Removing debugging tools from ${type_arg} ${name_arg}"
+  containers=$(${kubectl} get ${type_arg} ${name_arg} -o jsonpath='{.spec.template.spec.containers[*].name}')
+
+  patch=(
+    "spec:"
+    "  template:"
+    "    metadata:"
+    "      annotations:"
+    "        pod.alpha.kubernetes.io/init-containers: null"
+    "        pod.beta.kubernetes.io/init-containers: null"
+    "    spec:"
+    "      volumes:"
+    "      - \$patch: delete"
+    "        name: k8s-debugbox"
+    "      initContainers:"
+    "      - \$patch: delete"
+    "        name: init-debugbox"
+    "      containers:"
+  )
+
+  for container in ${containers}; do
+    patch+=(
+      "      - name: ${container}"
+      "        volumeMounts:"
+      "        - \$patch: delete"
+      "          mountPath: ${pod_debugbox_dir}"
+    )
+  done
+
+
+  patch="$(printf '%s\n' "${patch[@]}")"  # convert patch to string
+  #echo "$patch"
+  ${kubectl} patch --patch="${patch}" ${type_arg} ${name_arg} || exit 1 #&& \
+  ${kubectl} rollout status "${type_arg}" "${name_arg}" || exit 1
+  #${KUBECTL} delete configmap k8s-debugbox
+}
+
+init
+parse_cmdline "$@"
+
+# case "$*" in
+#   +([^-])\ +([^-])*)
+#     type=$1
+#     name=$2
+#     ;;
+  # --remove\ +([^-])\ +([^-]))
+  #   remove=true
+  #   type=$2
+  #   name=$3
+  #   ;;
+#   +([^-])\ +([^-])\ --remove)
+#     remote=true
+#     type=$1
+#     name=$2
+#     ;;
+#   *)
+#     echo 'Usage:' >&2
+#     echo "  $(basename $0) TYPE NAME [options]" >&2
+#     exit 1
+# esac
+
+# echo $type
+# echo $name
+# echo $container
+# echo $remove
+# exit 0
+
+if [ "${type_arg}" = "pod" ]; then
+  if [ "${remove_opt}" != true ]; then
+    install_into_pod
+  else
+    remove_from_pod
+  fi
+else
+  if [ "${remove_opt}" != true ]; then
+    install_into_controller
+  else
+    remove_from_controller
+  fi
+fi
+
+#!/bin/sh
+
+# if command -v oc >/dev/null 2>&1; then
+#   KUBECTL=oc
+# elif command -v kubectl >/dev/null 2>&1; then
+#   KUBECTL=kubectl
+# else
+#   echo "$0: Either the Kubernetes client 'kubectl' or the OpenShift client 'oc' is required!" >&2
+#   exit 1
+# fi

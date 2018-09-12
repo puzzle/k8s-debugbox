@@ -1,0 +1,4 @@
+#!/tmp/box/bin/sh
+
+shell=$(command -v bash) || shell=$(command -v sh) || shell=/tmp/box/bin/sh
+PS1='[\u@\h:\W] [debugbox] \$ ' PATH=$PATH:/tmp/box/bin exec $shell "$@"
