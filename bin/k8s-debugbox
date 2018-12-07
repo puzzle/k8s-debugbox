@@ -1,11 +1,5 @@
 #!/bin/bash
 
-# k8s-debugbox pod openshift3-docker-hello-41-dmj88
-# k8s-debugbox pod openshift3-docker-hello-41-dmj88 -c CONTAINER
-# k8s-debugbox pod openshift3-docker-hello-41-dmj88 --remove
-
-# shopt -s extglob
-
 debugbox_dir=${HOME}/.k8s-debugbox/box
 pod_debugbox_dir=/tmp/box  # Use // to prevent MSYS path translation
 
@@ -140,8 +134,6 @@ remove_from_pod() {
 }
 
 install_into_controller() {
-  #installed=($(kubectl get ${type_arg} ${name_arg} -o jsonpath='{.spec.template.metadata.annotations.k8s-debugbox}'))
-#  if [ ! "${installed}" ]; then
   echo "Installing debugging tools into ${type_arg} ${name_arg}"
   containers=$(${kubectl} get "${type_arg}" "${name_arg}" -o jsonpath='{.spec.template.spec.containers[*].name}')
 
@@ -200,31 +192,18 @@ install_into_controller() {
   done
 
   patch="$(printf '%s\n' "${patch[@]}")"  # convert patch to string
-  #echo "${patch}"
   ${kubectl} patch --patch="${patch}" "${type_arg}" "${name_arg}"
   ${kubectl} rollout status "${type_arg}" "${name_arg}" || exit 1
 
   if [ "${add_opt}" != true ]; then
-    #${kubectl} exec -it "${type_arg}" "${name_arg}" ${pod_debugbox_dir}/sh
     selector=$(${kubectl} get "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := (or .spec.selector.matchLabels .spec.selector)}}{{$key}}={{$value}},{{end}}')
     selector="${selector%,}"  # remove trailing comma
-    #kubectl get pod -l "${selector::-1}" -o yaml
-    #pods=$(kubectl get pod -l "${selector::-1}" -o go-template='{{range .items}}{{if eq .status.phase "Running"}}{{.metadata.name}}{{end}}{{end}}')
-    #pods=($(kubectl get pod -l app=pause -o go-template='{{range .items}}{{$name:=.metadata.name}}{{range .status.conditions}}{{if eq .type "Ready"}}{{$name}}{{"\n"}}{{end}}{{end}}{{end}}'))
-    #pods=($(kubectl get pod -l "${selector}" -o go-template='{{range .items}}{{$name:=.metadata.name}}{{range .status.conditions}}{{if and (eq .type "Ready") (eq .status "True")}}{{$name}}{{"\n"}}{{end}}{{end}}{{end}}'))
     pods=($(${kubectl} get pod -l "${selector}" -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{.metadata.name}}{{end}}{{end}}'))
-    # echo
-    # kubectl get pod -l "${selector}" >debug.yaml
-    # kubectl get pod -l "${selector}" -o yaml >>debug.yaml
-    # kubectl get pod -l "${selector}"
-    # echo
-    # echo "${pods[@]}"
     ${kubectl} exec ${container_opt} -it ${pods[0]} ${pod_debugbox_dir}/sh
   fi
 }
 
 remove_from_controller() {
-  #installed=$(kubectl get ${type_arg} ${name_arg} -o jsonpath='{.spec.template.metadata.annotations.k8s-debugbox}')
   installed=$(${kubectl} get ${type_arg} ${name_arg} -o jsonpath='{.spec.template.spec.volumes[?(@.name=="k8s-debugbox")].name}')
   if [ ! "${installed}" ]; then
     echo "No debugging tools installed in ${type_arg} ${name_arg}"
@@ -262,41 +241,12 @@ remove_from_controller() {
 
 
   patch="$(printf '%s\n' "${patch[@]}")"  # convert patch to string
-  #echo "$patch"
   ${kubectl} patch --patch="${patch}" ${type_arg} ${name_arg} || exit 1 #&& \
   ${kubectl} rollout status "${type_arg}" "${name_arg}" || exit 1
-  #${KUBECTL} delete configmap k8s-debugbox
 }
 
 init
 parse_cmdline "$@"
-
-# case "$*" in
-#   +([^-])\ +([^-])*)
-#     type=$1
-#     name=$2
-#     ;;
-  # --remove\ +([^-])\ +([^-]))
-  #   remove=true
-  #   type=$2
-  #   name=$3
-  #   ;;
-#   +([^-])\ +([^-])\ --remove)
-#     remote=true
-#     type=$1
-#     name=$2
-#     ;;
-#   *)
-#     echo 'Usage:' >&2
-#     echo "  $(basename $0) TYPE NAME [options]" >&2
-#     exit 1
-# esac
-
-# echo $type
-# echo $name
-# echo $container
-# echo $remove
-# exit 0
 
 if [ "${type_arg}" = "pod" ]; then
   if [ "${remove_opt}" != true ]; then
@@ -311,14 +261,3 @@ else
     remove_from_controller
   fi
 fi
-
-#!/bin/sh
-
-# if command -v oc >/dev/null 2>&1; then
-#   KUBECTL=oc
-# elif command -v kubectl >/dev/null 2>&1; then
-#   KUBECTL=kubectl
-# else
-#   echo "$0: Either the Kubernetes client 'kubectl' or the OpenShift client 'oc' is required!" >&2
-#   exit 1
-# fi
