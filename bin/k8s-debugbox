@@ -14,7 +14,7 @@ usage() {
     "  # install debugging tools into the container if they aren't installed yet."
     "  k8s-debugbox pod hello-42-dmj88"
     ""
-    "  # Open debugging shell for container 'proxy' of tje specified pod,"
+    "  # Open debugging shell for container 'proxy' of the specified pod,"
     "  # install debugging tools into the container if they aren't installed yet."
     "  k8s-debugbox pod hello-42-dmj88 -c proxy"
     ""
@@ -29,12 +29,20 @@ usage() {
     "  # Requires a redeployment."
     "  k8s-debugbox deployment hello"
     ""
+    "  # Open debugging shell for the first container of the first pod of the specified controller,"
+    "  # install debugging tools into all containers of the controller if they aren't installed yet."
+    "  # Uses the specified Docker image for tool installation instead of the default one."
+    "  # Requires a redeployment."
+    "  k8s-debugbox deployment hello -i example.org/tools/k8s-debugbox"
+    ""
     "  # Uninstall debugging tools from specified controller."
     "  # Requires a redeployment."
     "  k8s-debugbox deployment hello --remove"
     ""
     "Options:"
+    "  -n, --namespace='': Namespace which contains the pod to debug, defaults to the namespace of the current kubectl context"
     "  -c, --container='': Container name to open shell for, defaults to first container in pod"
+    "  -i, --image='puzzle/k8s-debugbox': Docker image for installation of debugging via controller. Must be built from 'puzzle/k8s-debugbox' repository."
     "  -h, --help: Show this help message"
     "      --add: Install debugging tools into specified resource"
     "      --remove: Remove debugging tools from specified resource"
@@ -69,7 +77,9 @@ parse_cmdline() {
   local args=()
   add_opt=false
   remove_opt=false
-  container=""
+  container_opt=""
+  image_opt="puzzle/k8s-debugbox"
+  namespace_opt=""
   while [ $# -gt 0 ]; do
     case "$1" in
       -h|--help)
@@ -87,6 +97,20 @@ parse_cmdline() {
         ;;
       --container=*)
         container_opt="--container=${1#*=}"
+        ;;
+      -i|--image)
+        shift
+        image_opt="${1}"
+        ;;
+      --image=*)
+        image_opt="${1#*=}"
+        ;;
+      -n|--namespace)
+        shift
+        namespace_opt="--namespace=${1}"
+        ;;
+      --namespace=*)
+        namespace_opt="--namespace=${1#*=}"
         ;;
       -*)
         usage "Unknown option $1"
@@ -106,9 +130,9 @@ parse_cmdline() {
 }
 
 install_into_pod() {
-  if ! ${kubectl} exec ${container_opt} "${name_arg}" ${pod_debugbox_dir}/bin/true >/dev/null 2>&1; then
+  if ! ${kubectl} exec ${namespace_opt} ${container_opt} "${name_arg}" ${pod_debugbox_dir}/bin/true >/dev/null 2>&1; then
     echo "Uploading debugging tools into ${type_arg} ${name_arg}"
-    ${kubectl} cp ${container_opt} ${debugbox_dir} "${name_arg}":/tmp/
+    ${kubectl} cp ${namespace_opt} ${container_opt} ${debugbox_dir} "${name_arg}":/tmp/
     if [ $? != 0 ]; then
       echo >&2
       echo "Couldn't upload debugging tools!" >&2
@@ -116,18 +140,18 @@ install_into_pod() {
       exit 1
     fi
 
-    ${kubectl} exec ${container_opt} "${name_arg}" ${pod_debugbox_dir}/install-k8s-debugbox.sh || exit 1
+    ${kubectl} exec ${namespace_opt} ${container_opt} "${name_arg}" ${pod_debugbox_dir}/install-k8s-debugbox.sh || exit 1
   fi
 
   if [ "${add_opt}" != true ]; then
-    ${kubectl} exec ${container_opt} -it "${name_arg}" ${pod_debugbox_dir}/sh
+    ${kubectl} exec ${namespace_opt} ${container_opt} -it "${name_arg}" ${pod_debugbox_dir}/sh
   fi
 }
 
 remove_from_pod() {
-  if ${kubectl} exec "${name_arg}" -- ${pod_debugbox_dir}/bin/test -e ${pod_debugbox_dir}/uninstall-k8s-debugbox.sh >/dev/null 2>&1; then
+  if ${kubectl} exec ${namespace_opt} "${name_arg}" -- ${pod_debugbox_dir}/bin/test -e ${pod_debugbox_dir}/uninstall-k8s-debugbox.sh >/dev/null 2>&1; then
     echo "Removing debugging tools from ${type_arg} ${name_arg}"
-    ${kubectl} exec ${container_opt} "${name_arg}" ${pod_debugbox_dir}/uninstall-k8s-debugbox.sh || exit 1
+    ${kubectl} exec ${namespace_opt} ${container_opt} "${name_arg}" ${pod_debugbox_dir}/uninstall-k8s-debugbox.sh || exit 1
   else
     echo "No debugging tools are installed in ${type_arg} '${name_arg}' with 'kubectl cp' mechanism!"
   fi
@@ -135,9 +159,9 @@ remove_from_pod() {
 
 install_into_controller() {
   echo "Installing debugging tools into ${type_arg} ${name_arg}"
-  containers=$(${kubectl} get "${type_arg}" "${name_arg}" -o jsonpath='{.spec.template.spec.containers[*].name}')
+  containers=$(${kubectl} get ${namespace_opt} "${type_arg}" "${name_arg}" -o jsonpath='{.spec.template.spec.containers[*].name}')
 
-  annotations=($(${kubectl} get "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := .spec.template.metadata.annotations}}{{$key}}{{"\n"}}{{end}}'))
+  annotations=($(${kubectl} get ${namespace_opt} "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := .spec.template.metadata.annotations}}{{$key}}{{"\n"}}{{end}}'))
   if [[ " ${annotations[@]} " =~ " pod.alpha.kubernetes.io/init-containers " ]]; then
     alpha_init_containers_annotation=true
   fi
@@ -174,7 +198,7 @@ install_into_controller() {
     "        emptyDir: {}"
     "      initContainers:"
     "      - name: init-debugbox"
-    "        image: puzzle/k8s-debugbox"
+    "        image: ${image_opt}"
     "        imagePullPolicy: Always"
     "        volumeMounts:"
     "        - name: k8s-debugbox"
@@ -192,26 +216,26 @@ install_into_controller() {
   done
 
   patch="$(printf '%s\n' "${patch[@]}")"  # convert patch to string
-  ${kubectl} patch --patch="${patch}" "${type_arg}" "${name_arg}"
-  ${kubectl} rollout status "${type_arg}" "${name_arg}" || exit 1
+  ${kubectl} patch ${namespace_opt} --patch="${patch}" "${type_arg}" "${name_arg}"
+  ${kubectl} rollout status ${namespace_opt} "${type_arg}" "${name_arg}" || exit 1
 
   if [ "${add_opt}" != true ]; then
-    selector=$(${kubectl} get "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := (or .spec.selector.matchLabels .spec.selector)}}{{$key}}={{$value}},{{end}}')
+    selector=$(${kubectl} get ${namespace_opt} "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := (or .spec.selector.matchLabels .spec.selector)}}{{$key}}={{$value}},{{end}}')
     selector="${selector%,}"  # remove trailing comma
-    pods=($(${kubectl} get pod -l "${selector}" -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{.metadata.name}}{{end}}{{end}}'))
-    ${kubectl} exec ${container_opt} -it ${pods[0]} ${pod_debugbox_dir}/sh
+    pods=($(${kubectl} get pod ${namespace_opt} -l "${selector}" -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{.metadata.name}}{{end}}{{end}}'))
+    ${kubectl} exec ${namespace_opt} ${container_opt} -it ${pods[0]} ${pod_debugbox_dir}/sh
   fi
 }
 
 remove_from_controller() {
-  installed=$(${kubectl} get ${type_arg} ${name_arg} -o jsonpath='{.spec.template.spec.volumes[?(@.name=="k8s-debugbox")].name}')
+  installed=$(${kubectl} get ${namespace_opt} ${type_arg} ${name_arg} -o jsonpath='{.spec.template.spec.volumes[?(@.name=="k8s-debugbox")].name}')
   if [ ! "${installed}" ]; then
     echo "No debugging tools installed in ${type_arg} ${name_arg}"
     exit 0
   fi
 
   echo "Removing debugging tools from ${type_arg} ${name_arg}"
-  containers=$(${kubectl} get ${type_arg} ${name_arg} -o jsonpath='{.spec.template.spec.containers[*].name}')
+  containers=$(${kubectl} get ${namespace_opt} ${type_arg} ${name_arg} -o jsonpath='{.spec.template.spec.containers[*].name}')
 
   patch=(
     "spec:"
@@ -241,8 +265,8 @@ remove_from_controller() {
 
 
   patch="$(printf '%s\n' "${patch[@]}")"  # convert patch to string
-  ${kubectl} patch --patch="${patch}" ${type_arg} ${name_arg} || exit 1 #&& \
-  ${kubectl} rollout status "${type_arg}" "${name_arg}" || exit 1
+  ${kubectl} patch ${namespace_opt} --patch="${patch}" ${type_arg} ${name_arg} || exit 1 #&& \
+  ${kubectl} rollout status ${namespace_opt} "${type_arg}" "${name_arg}" || exit 1
 }
 
 init
