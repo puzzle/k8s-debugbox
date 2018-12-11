@@ -32,7 +32,7 @@ Examples:
   # install debugging tools into the container if they aren't installed yet.
   k8s-debugbox pod hello-42-dmj88
 
-  # Open debugging shell for container 'proxy' of tje specified pod,
+  # Open debugging shell for container 'proxy' of the specified pod,
   # install debugging tools into the container if they aren't installed yet.
   k8s-debugbox pod hello-42-dmj88 -c proxy
 
@@ -47,12 +47,20 @@ Examples:
   # Requires a redeployment.
   k8s-debugbox deployment hello
 
+  # Open debugging shell for the first container of the first pod of the specified controller,
+  # install debugging tools into all containers of the controller if they aren't installed yet.
+  # Uses the specified Docker image for tool installation instead of the default one.
+  # Requires a redeployment.
+  k8s-debugbox deployment hello -i example.org/tools/k8s-debugbox
+
   # Uninstall debugging tools from specified controller.
   # Requires a redeployment.
   k8s-debugbox deployment hello --remove
 
 Options:
+  -n, --namespace='': Namespace which contains the pod to debug, defaults to the namespace of the current kubectl context
   -c, --container='': Container name to open shell for, defaults to first container in pod
+  -i, --image='puzzle/k8s-debugbox': Docker image for installation of debugging via controller. Must be built from 'puzzle/k8s-debugbox' repository.
   -h, --help: Show this help message
       --add: Install debugging tools into specified resource
       --remove: Remove debugging tools from specified resource
