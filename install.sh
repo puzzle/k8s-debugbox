@@ -22,10 +22,12 @@ if [ ! -e bin/k8s-debugbox ]; then
     exit 1
 fi
 
+echo "Copying static binaries to '${debugbox_dir}'"
 mkdir -p ${debugbox_dir}
 cp -r box ${debugbox_dir}
 
 if writable_path_dir="$(findWritablePathDir)"; then
+    echo "Copying 'k8s-debugbox' script to '${writable_path_dir}'"
     cp bin/k8s-debugbox "${writable_path_dir}"
     if command -v bash.exe >/dev/null 2>&1; then
         cp bin/k8s-debugbox.bat "${writable_path_dir}"

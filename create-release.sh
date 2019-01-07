@@ -6,7 +6,7 @@ if [ ! -e bin/k8s-debugbox ]; then
 fi
 
 if [ ! -e box/busybox ]; then
-    echo "'bootstrap.sh' must habe been run first!" >&2
+    echo "'bootstrap.sh' must be run first!" >&2
     exit 1
 fi
 
@@ -17,7 +17,7 @@ if [ $# -ne 1 ]; then
 fi
 
 mkdir -p "releases/k8s-debugbox-$1/box"
-cp box/busybox box/toybox "releases/k8s-debugbox-$1/box"
+cp box/busybox box/toybox box/curl box/cacert.pem "releases/k8s-debugbox-$1/box"
 git archive HEAD --prefix=k8s-debugbox-$1/ -o releases/k8s-debugbox-$1.tar
 git archive HEAD --prefix=k8s-debugbox-$1/ -o releases/k8s-debugbox-$1.zip
 (cd releases && tar --owner=root --group=root -rf k8s-debugbox-$1.tar "k8s-debugbox-$1" && gzip -9f k8s-debugbox-$1.tar)

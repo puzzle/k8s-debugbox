@@ -1,10 +1,9 @@
 FROM busybox
 
-COPY box/install-k8s-debugbox.sh box/sh /box/
+# Download latest k8s-debugbox release
+RUN mkdir -p /usr/local/k8s-debugbox && \
+    wget -qO- $(wget -qO- https://api.github.com/repos/puzzle/k8s-debugbox/releases/latest | \
+    sed -n 's/.*"browser_download_url": *"\([^"]\+.tar.gz\)".*/\1/p') | \
+    tar -C /usr/local/k8s-debugbox --strip-components 1 -zxvf -
 
-ADD https://busybox.net/downloads/binaries/1.28.1-defconfig-multiarch/busybox-x86_64 /box/busybox
-ADD http://landley.net/toybox/bin/toybox-x86_64 /box/toybox
-
-RUN chmod 0755 /box/*
-
-CMD ["/bin/sh", "/box/install-k8s-debugbox.sh"]
+CMD ["/bin/sh", "/usr/local/k8s-debugbox/box/install-k8s-debugbox.sh"]

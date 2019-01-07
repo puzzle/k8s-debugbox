@@ -1,3 +1,5 @@
 box/busybox
 box/toybox
+box/curl
+box/cacert.pem
 releases
