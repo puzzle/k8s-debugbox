@@ -217,7 +217,7 @@ install_into_controller() {
 
   patch="$(printf '%s\n' "${patch[@]}")"  # convert patch to string
   ${kubectl} patch ${namespace_opt} --patch="${patch}" "${type_arg}" "${name_arg}"
-  ${kubectl} rollout status ${namespace_opt} "${type_arg}" "${name_arg}" || exit 1
+  ${kubectl} rollout status ${namespace_opt} "${type_arg}" "${name_arg}"
 
   if [ "${add_opt}" != true ]; then
     selector=$(${kubectl} get ${namespace_opt} "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := (or .spec.selector.matchLabels .spec.selector)}}{{$key}}={{$value}},{{end}}')
