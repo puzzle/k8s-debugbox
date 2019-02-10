@@ -222,7 +222,7 @@ install_into_controller() {
   if [ "${add_opt}" != true ]; then
     selector=$(${kubectl} get ${namespace_opt} "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := (or .spec.selector.matchLabels .spec.selector)}}{{$key}}={{$value}},{{end}}')
     selector="${selector%,}"  # remove trailing comma
-    pods=($(${kubectl} get pod ${namespace_opt} -l "${selector}" -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{.metadata.name}}{{end}}{{end}}'))
+    pods=($(${kubectl} get pod ${namespace_opt} -l "${selector}" -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}'))
     ${kubectl} exec ${namespace_opt} ${container_opt} -it ${pods[0]} ${pod_debugbox_dir}/sh
   fi
 }
