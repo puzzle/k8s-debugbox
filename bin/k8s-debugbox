@@ -197,7 +197,7 @@ install_into_controller() {
     "      - name: k8s-debugbox"
     "        emptyDir: {}"
     "      initContainers:"
-    "      - name: init-debugbox"
+    "      - name: k8s-debugbox"
     "        image: ${image_opt}"
     "        imagePullPolicy: Always"
     "        volumeMounts:"
@@ -250,7 +250,7 @@ remove_from_controller() {
     "        name: k8s-debugbox"
     "      initContainers:"
     "      - \$patch: delete"
-    "        name: init-debugbox"
+    "        name: k8s-debugbox"
     "      containers:"
   )
 

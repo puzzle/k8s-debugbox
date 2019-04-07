@@ -19,3 +19,8 @@ echo "Downloading static curl binary and CA bundle:"
 curl -Lo box/curl https://github.com/dtschan/curl-static/releases/download/v7.63.0/curl
 curl -Lo box/cacert.pem https://curl.haxx.se/ca/cacert.pem
 chmod +x box/curl
+
+echo
+echo "Downloading static vim binary:"
+curl -Lo box/vim https://github.com/dtschan/vim-static/releases/download/v8.1.1045/vim
+chmod +x box/vim
