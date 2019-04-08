@@ -4,7 +4,7 @@ if [ ! -e /tmp/box/bin/sh ]; then
   mkdir -p /tmp/box/bin
 
   if [ ! -e /tmp/box/busybox ]; then
-    cp /usr/local/k8s-debugbox/box/* /tmp/box
+    cp -r /usr/local/k8s-debugbox/box/* /tmp/box
   fi
 
   echo "Installing Busybox"

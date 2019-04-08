@@ -1,4 +1,4 @@
 #!/tmp/box/bin/sh
 
 shell=$(command -v bash) || shell=$(command -v sh) || shell=/tmp/box/bin/sh
-PS1='[\u@\h:\W] [debugbox] \$ ' PATH=$PATH:/tmp/box/bin CURL_CA_BUNDLE=/tmp/box/cacert.pem exec $shell "$@"
+PS1='[\u@\h:\W] [debugbox] \$ ' PATH=$PATH:/tmp/box/bin CURL_CA_BUNDLE=/tmp/box/cacert.pem TERMINFO=/tmp/box/etc/terminfo VIM=/tmp/box/etc exec $shell "$@"

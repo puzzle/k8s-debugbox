@@ -24,3 +24,11 @@ echo
 echo "Downloading static vim binary:"
 curl -Lo box/vim https://github.com/dtschan/vim-static/releases/download/v8.1.1045/vim
 chmod +x box/vim
+
+echo ""
+echo "Downloading terminfo database."
+terminfo_url="http://dl-cdn.alpinelinux.org/alpine/latest-stable/main/x86_64/"
+terminfo_url="${terminfo_url}$(curl -s ${terminfo_url} | sed -ne 's/.*href=\"\(ncurses-terminfo-base-[^\"]\+\)\".*/\1/p')"
+curl -Lo box/terminfo.apk ${terminfo_url}
+tar -C box -zxf box/terminfo.apk etc/terminfo 2>/dev/null
+rm -f box/terminfo.apk
