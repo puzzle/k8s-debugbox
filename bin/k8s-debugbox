@@ -130,7 +130,7 @@ parse_cmdline() {
 }
 
 install_into_pod() {
-  if ! ${kubectl} exec ${namespace_opt} ${container_opt} "${name_arg}" ${pod_debugbox_dir}/bin/true >/dev/null 2>&1; then
+  if ! ${kubectl} exec ${namespace_opt} ${container_opt} "${name_arg}" -- ${pod_debugbox_dir}/bin/true >/dev/null 2>&1; then
     echo "Uploading debugging tools into ${type_arg} ${name_arg}"
     ${kubectl} cp ${namespace_opt} ${container_opt} ${debugbox_dir} "${name_arg}":/tmp/
     if [ $? != 0 ]; then
@@ -140,18 +140,18 @@ install_into_pod() {
       exit 1
     fi
 
-    ${kubectl} exec ${namespace_opt} ${container_opt} "${name_arg}" ${pod_debugbox_dir}/install-k8s-debugbox.sh || exit 1
+    ${kubectl} exec ${namespace_opt} ${container_opt} "${name_arg}" -- ${pod_debugbox_dir}/install-k8s-debugbox.sh || exit 1
   fi
 
   if [ "${add_opt}" != true ]; then
-    ${kubectl} exec ${namespace_opt} ${container_opt} -it "${name_arg}" ${pod_debugbox_dir}/sh
+    ${kubectl} exec ${namespace_opt} ${container_opt} -it "${name_arg}" -- ${pod_debugbox_dir}/sh
   fi
 }
 
 remove_from_pod() {
   if ${kubectl} exec ${namespace_opt} "${name_arg}" -- ${pod_debugbox_dir}/bin/test -e ${pod_debugbox_dir}/uninstall-k8s-debugbox.sh >/dev/null 2>&1; then
     echo "Removing debugging tools from ${type_arg} ${name_arg}"
-    ${kubectl} exec ${namespace_opt} ${container_opt} "${name_arg}" ${pod_debugbox_dir}/uninstall-k8s-debugbox.sh || exit 1
+    ${kubectl} exec ${namespace_opt} ${container_opt} "${name_arg}" -- ${pod_debugbox_dir}/uninstall-k8s-debugbox.sh || exit 1
   else
     echo "No debugging tools are installed in ${type_arg} '${name_arg}' with 'kubectl cp' mechanism!"
   fi
@@ -223,7 +223,7 @@ install_into_controller() {
     selector=$(${kubectl} get ${namespace_opt} "${type_arg}" "${name_arg}" -o go-template='{{range $key, $value := (or .spec.selector.matchLabels .spec.selector)}}{{$key}}={{$value}},{{end}}')
     selector="${selector%,}"  # remove trailing comma
     pods=($(${kubectl} get pod ${namespace_opt} -l "${selector}" -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}'))
-    ${kubectl} exec ${namespace_opt} ${container_opt} -it ${pods[0]} ${pod_debugbox_dir}/sh
+    ${kubectl} exec ${namespace_opt} ${container_opt} -it ${pods[0]} -- ${pod_debugbox_dir}/sh
   fi
 }
 
